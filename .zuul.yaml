@@ -5,6 +5,7 @@
       - openstack/neutron
       - openstack/networking-bgpvpn
       - openstack/networking-bagpipe
+      - openstack/neutron-lib
     vars:
       project_name: networking-bgpvpn
       devstack_localrc:
@@ -24,6 +25,7 @@
       - openstack/networking-bgpvpn
       - openstack/networking-bagpipe
       - openstack/horizon
+      - openstack/neutron-lib
     vars:
       project_name: networking-bgpvpn
       # NOTE(lajoskatona): neutron-functional sets tox_install_siblings to
@@ -118,10 +120,12 @@
               - openstack/neutron
               - openstack/networking-bagpipe
               - openstack/horizon
+              - openstack/neutron-lib
         - openstack-tox-pep8:
             required-projects:
               - openstack/networking-bagpipe
               - openstack/horizon
+              - openstack/neutron-lib
         - openstack-tox-py36:
             required-projects:
               - openstack/networking-bagpipe
@@ -140,18 +144,23 @@
               - openstack/neutron
               - openstack/networking-bagpipe
               - openstack/horizon
-        - horizon-tox-python3-django32:
+              - openstack/neutron-lib
+        - networking-bgpvpn-functional-full:
+            required-projects:
+              - openstack/neutron-lib
+    gate:
+      jobs:
+        - openstack-tox-lower-constraints:
+            voting: false
             required-projects:
               - openstack/neutron
               - openstack/networking-bagpipe
               - openstack/horizon
-        - networking-bgpvpn-functional-full
-    gate:
-      jobs:
         - openstack-tox-pep8:
             required-projects:
               - openstack/networking-bagpipe
               - openstack/horizon
+              - openstack/neutron-lib
         - openstack-tox-py36:
             required-projects:
               - openstack/networking-bagpipe
@@ -165,7 +174,9 @@
             irrelevant-files:
               - ^(test-|)requirements.txt$
               - ^setup.cfg$
-        - networking-bgpvpn-functional-full
+        - networking-bgpvpn-functional-full:
+            required-projects:
+              - openstack/neutron-lib
     experimental:
       jobs:
         - networking-bgpvpn-install
