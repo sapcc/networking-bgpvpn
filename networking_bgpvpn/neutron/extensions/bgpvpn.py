@@ -22,6 +22,7 @@ from neutron.api.v2 import base
 from neutron.api.v2 import resource_helper
 
 from neutron_lib.api.definitions import bgpvpn as bgpvpn_api_def
+from neutron_lib.api.definitions import rbac_bgpvpn
 from neutron_lib.api import extensions as api_extensions
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import directory
@@ -144,7 +145,10 @@ class Bgpvpn(api_extensions.APIExtensionDescriptor):
 class BGPVPNPluginBase(libbase.ServicePluginBase):
 
     path_prefix = "/" + bgpvpn_api_def.ALIAS
-    supported_extension_aliases = [bgpvpn_api_def.ALIAS]
+    supported_extension_aliases = [
+        bgpvpn_api_def.ALIAS,
+        rbac_bgpvpn.ALIAS,
+    ]
 
     def get_plugin_type(self):
         return bgpvpn_api_def.ALIAS

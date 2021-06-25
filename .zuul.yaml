@@ -5,6 +5,7 @@
       - openstack/neutron
       - openstack/networking-bgpvpn
       - openstack/networking-bagpipe
+      - openstack/neutron-lib
     vars:
       project_name: networking-bgpvpn
       devstack_localrc:
@@ -24,6 +25,7 @@
       - openstack/networking-bgpvpn
       - openstack/networking-bagpipe
       - openstack/horizon
+      - openstack/neutron-lib
     vars:
       project_name: networking-bgpvpn
       # NOTE(lajoskatona): neutron-functional sets tox_install_siblings to
@@ -80,10 +82,12 @@
               - openstack/neutron
               - openstack/networking-bagpipe
               - openstack/horizon
+              - openstack/neutron-lib
         - openstack-tox-pep8:
             required-projects:
               - openstack/networking-bagpipe
               - openstack/horizon
+              - openstack/neutron-lib
         - openstack-tox-py36:
             required-projects:
               - openstack/networking-bagpipe
@@ -105,7 +109,10 @@
               - openstack/neutron
               - openstack/networking-bagpipe
               - openstack/horizon
-        - networking-bgpvpn-functional-full
+              - openstack/neutron-lib
+        - networking-bgpvpn-functional-full:
+            required-projects:
+              - openstack/neutron-lib
     gate:
       jobs:
         - openstack-tox-lower-constraints:
@@ -118,6 +125,7 @@
             required-projects:
               - openstack/networking-bagpipe
               - openstack/horizon
+              - openstack/neutron-lib
         - openstack-tox-py36:
             required-projects:
               - openstack/networking-bagpipe

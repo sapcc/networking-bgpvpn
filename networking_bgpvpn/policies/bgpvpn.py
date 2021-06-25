@@ -12,10 +12,17 @@
 
 from oslo_policy import policy
 
+from neutron.conf.policies import base as common_base
+
 from networking_bgpvpn.policies import base
 
 
 rules = [
+    policy.RuleDefault(
+        name='shared_bgpvpns',
+        check_str='field:bgpvpns:shared=True',
+        description='Definition of a shared bgpvpns'
+    ),
     policy.DocumentedRuleDefault(
         'create_bgpvpn',
         base.RULE_ADMIN_ONLY,
@@ -121,7 +128,10 @@ rules = [
     ),
     policy.DocumentedRuleDefault(
         'get_bgpvpn',
-        base.RULE_ADMIN_OR_OWNER,
+        common_base.policy_or(
+            base.RULE_ADMIN_OR_OWNER,
+            'rule:shared_bgpvpns',
+        ),
         'Get BGP VPNs',
         [
             {

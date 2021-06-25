@@ -16,6 +16,7 @@
 import copy
 
 from neutron.db import servicetype_db as st_db
+from neutron.objects import base
 from neutron.services import provider_configuration as pconf
 from neutron.services import service_base
 
@@ -35,6 +36,7 @@ from networking_bgpvpn._i18n import _
 from networking_bgpvpn.neutron.extensions import bgpvpn
 from networking_bgpvpn.neutron.extensions \
     import bgpvpn_routes_control as bgpvpn_rc
+from networking_bgpvpn.neutron.objects import bgpvpn as bgpvpn_rbac_obj
 from networking_bgpvpn.neutron.services.common import constants
 
 LOG = log.getLogger(__name__)
@@ -64,6 +66,9 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
         LOG.info("BGP VPN Service Plugin using Service Driver: %s",
                  default_provider)
         self.driver = drivers[default_provider]
+
+        # Register RBAC object for BGPVPN RBAC
+        base.NeutronObjectRegistry.register(bgpvpn_rbac_obj.BGPVPNRBAC)
 
         if len(drivers) > 1:
             LOG.warning("Multiple drivers configured for BGPVPN, although"
@@ -190,10 +195,12 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
         net = self._validate_network(context, net_assoc['network_id'])
         # check every resource belong to the same tenant
         bgpvpn = self.get_bgpvpn(context, bgpvpn_id)
-        if net['tenant_id'] != bgpvpn['tenant_id']:
+        if net['tenant_id'] != bgpvpn['tenant_id'] and \
+                not bgpvpn['shared']:
             msg = 'network doesn\'t belong to the bgpvpn owner'
             raise n_exc.NotAuthorized(resource='bgpvpn', msg=msg)
-        if net_assoc['tenant_id'] != bgpvpn['tenant_id']:
+        if net_assoc['tenant_id'] != bgpvpn['tenant_id'] and \
+                not bgpvpn['shared']:
             msg = 'network association and bgpvpn should belong to\
                 the same tenant'
             raise n_exc.NotAuthorized(resource='bgpvpn', msg=msg)
@@ -224,10 +231,12 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
             msg = ("Router associations require the bgpvpn to be of type %s"
                    % constants.BGPVPN_L3)
             raise n_exc.BadRequest(resource='bgpvpn', msg=msg)
-        if not router['tenant_id'] == bgpvpn['tenant_id']:
+        if router['tenant_id'] != bgpvpn['tenant_id'] and \
+                not bgpvpn['shared']:
             msg = "router doesn't belong to the bgpvpn owner"
             raise n_exc.NotAuthorized(resource='bgpvpn', msg=msg)
-        if not (router_assoc['tenant_id'] == bgpvpn['tenant_id']):
+        if router_assoc['tenant_id'] != bgpvpn['tenant_id'] and \
+                not bgpvpn['shared']:
             msg = "router association and bgpvpn should " \
                   "belong to the same tenant"
             raise n_exc.NotAuthorized(resource='bgpvpn', msg=msg)
