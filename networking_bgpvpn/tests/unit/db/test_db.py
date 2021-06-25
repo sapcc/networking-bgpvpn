@@ -12,12 +12,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+from oslo_utils import uuidutils
 
+from neutron.db import rbac_db_models
 from neutron_lib.api.definitions import bgpvpn_routes_control as bgpvpn_rc_def
 from neutron_lib.api.definitions import bgpvpn_vni as bgpvpn_vni_def
 from neutron_lib import context
+from neutron_lib.db import api as db_api
 
 from networking_bgpvpn.neutron.db.bgpvpn_db import BGPVPNPluginDb
+from networking_bgpvpn.neutron.db.bgpvpn_db import BGPVPNRBAC
 from networking_bgpvpn.neutron.extensions.bgpvpn \
     import BGPVPNNetAssocAlreadyExists
 from networking_bgpvpn.neutron.extensions.bgpvpn import BGPVPNNetAssocNotFound
@@ -36,6 +40,7 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
     def setUp(self, service_provider=None):
         super(BgpvpnDBTestCase, self).setUp(service_provider)
         self.ctx = context.get_admin_context()
+        self.ctx.tenant_id = self._tenant_id
         self.plugin_db = BGPVPNPluginDb()
 
     def test_bgpvpn_create_update_delete(self):
@@ -43,7 +48,7 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
             # create
             bgpvpn = self.plugin_db.create_bgpvpn(
                 self.ctx,
-                {"tenant_id": self._tenant_id,
+                {"tenant_id": self.ctx.tenant_id,
                  "type": "l3",
                  "name": "",
                  "route_targets": ["64512:1"],
@@ -56,7 +61,7 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
             )
 
             net_assoc = {'network_id': net['network']['id'],
-                         'tenant_id': self._tenant_id}
+                         'tenant_id': self.ctx.tenant_id}
             # associate network
             assoc1 = self.plugin_db.create_net_assoc(self.ctx, bgpvpn['id'],
                                                      net_assoc)
@@ -74,6 +79,7 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
                              bgpvpn['export_targets'])
             self.assertEqual(["64512:15", "64512:16"],
                              bgpvpn['route_distinguishers'])
+            self.assertEqual(False, bgpvpn['shared'])
 
             if utils.is_extension_supported(self.bgpvpn_plugin,
                                             bgpvpn_vni_def.ALIAS):
@@ -144,6 +150,7 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
                              bgpvpn2['export_targets'])
             self.assertEqual([], bgpvpn2['route_distinguishers'])
             self.assertEqual(100, bgpvpn2['local_pref'])
+            self.assertEqual(False, bgpvpn['shared'])
             # find bgpvpn by network_id
             bgpvpn3 = self.plugin_db.get_bgpvpns(
                 self.ctx,
@@ -209,6 +216,37 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
             else:
                 self._test_router_assocs(bgpvpn_id, max_assocs,
                                          assoc_count=assoc_count)
+
+    def test_bgpvpn_shared(self):
+        # create
+        bgpvpn = self.plugin_db.create_bgpvpn(
+            self.ctx,
+            {
+                "tenant_id": self.ctx.tenant_id,
+                "type": "l3",
+                "name": "",
+                "route_targets": ["64512:1"],
+                "import_targets": ["64512:11", "64512:12"],
+                "export_targets": ["64512:13", "64512:14"],
+                "route_distinguishers": ["64512:15", "64512:16"],
+                "vni": "1000",
+                "local_pref": "777"
+            }
+        )
+        target_tenant = uuidutils.generate_uuid()
+        with db_api.CONTEXT_WRITER.using(self.ctx):
+            self.ctx.session.add(BGPVPNRBAC(
+                object_id=bgpvpn['id'],
+                target_tenant=target_tenant,
+                action=rbac_db_models.ACCESS_SHARED,
+                object_type=BGPVPNRBAC.object_type,
+                project_id=self._tenant_id,
+            ))
+
+        # check
+        ctx = context.Context(tenant_id=target_tenant, overwrite=False)
+        bgpvpn = self.plugin_db.get_bgpvpn(ctx, bgpvpn['id'])
+        self.assertEqual(True, bgpvpn['shared'])
 
     def test_db_associate_disassociate_net(self):
         with self.network() as net:

@@ -330,7 +330,7 @@ class BaGPipeBGPVPNDriver(v2.BaGPipeBGPVPNDriver):
     @db_api.CONTEXT_READER
     def retrieve_bgpvpns_of_router_assocs_by_network(self, context,
                                                      network_id):
-        return [self.bgpvpn_db._make_bgpvpn_dict(bgpvpn) for bgpvpn in
+        return [self.bgpvpn_db._make_bgpvpn_dict(context, bgpvpn) for bgpvpn in
                 get_bgpvpns_of_router_assocs_by_network(context, network_id)]
 
     def delete_bgpvpn_postcommit(self, context, bgpvpn):

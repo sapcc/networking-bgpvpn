@@ -17,6 +17,7 @@ from oslo_db import exception as db_exc
 from oslo_log import log
 from oslo_utils import uuidutils
 import sqlalchemy as sa
+from sqlalchemy import and_
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
@@ -31,6 +32,8 @@ from neutron_lib.db import standard_attr
 from neutron_lib.db import utils as db_utils
 from neutron_lib.plugins import directory
 
+from neutron.db import rbac_db_models
+
 from networking_bgpvpn.neutron.extensions import bgpvpn as bgpvpn_ext
 from networking_bgpvpn.neutron.extensions\
     import bgpvpn_routes_control as bgpvpn_rc_ext
@@ -44,6 +47,19 @@ class HasProjectNotNullable(model_base.HasProject):
     project_id = sa.Column(sa.String(db_const.PROJECT_ID_FIELD_SIZE),
                            index=True,
                            nullable=False)
+
+
+class BGPVPNRBAC(rbac_db_models.RBACColumns, model_base.BASEV2):
+    """RBAC table for bgpvpns."""
+
+    object_id = sa.Column(sa.String(36),
+                          sa.ForeignKey('bgpvpns.id', ondelete="CASCADE"),
+                          nullable=False)
+    object_type = 'bgpvpn'
+
+    @staticmethod
+    def get_valid_actions():
+        return (rbac_db_models.ACCESS_SHARED,)
 
 
 class BGPVPNNetAssociation(standard_attr.HasStandardAttributes,
@@ -150,6 +166,10 @@ class BGPVPN(standard_attr.HasStandardAttributes, model_base.BASEV2,
                                          backref="bgpvpn",
                                          lazy='select',
                                          cascade='all, delete-orphan')
+    rbac_entries = sa.orm.relationship(BGPVPNRBAC,
+                                       backref='bgpvpn',
+                                       lazy='subquery',
+                                       cascade='all, delete, delete-orphan')
 
     # standard attributes support:
     api_collections = [bgpvpn_def.COLLECTION_NAME]
@@ -254,18 +274,7 @@ class BGPVPNPluginDb():
         return super(BGPVPNPluginDb, cls).__new__(cls, *args, **kwargs)
 
     @db_api.CONTEXT_READER
-    def _get_bgpvpns_for_tenant(self, session, tenant_id, fields):
-        try:
-            qry = session.query(BGPVPN)
-            bgpvpns = qry.filter_by(tenant_id=tenant_id)
-        except exc.NoResultFound:
-            return
-
-        return [self._make_bgpvpn_dict(bgpvpn, fields=fields)
-                for bgpvpn in bgpvpns]
-
-    @db_api.CONTEXT_READER
-    def _make_bgpvpn_dict(self, bgpvpn_db, fields=None):
+    def _make_bgpvpn_dict(self, context, bgpvpn_db, fields=None):
         net_list = [net_assocs.network_id for net_assocs in
                     bgpvpn_db.network_associations]
         router_list = [router_assocs.router_id for router_assocs in
@@ -280,6 +289,7 @@ class BGPVPNPluginDb():
             'ports': port_list,
             'name': bgpvpn_db['name'],
             'type': bgpvpn_db['type'],
+            'shared': self._is_shared(context, bgpvpn_db),
             'route_targets':
                 utils.rtrd_str2list(bgpvpn_db['route_targets']),
             'route_distinguishers':
@@ -299,6 +309,14 @@ class BGPVPNPluginDb():
 
         return db_utils.resource_fields(res, fields)
 
+    @db_api.CONTEXT_READER
+    def _is_shared(self, context, bgpvpn_db):
+        return (context.session.query(BGPVPNRBAC).filter(
+                and_(BGPVPNRBAC.object_id == bgpvpn_db['id'],
+                     BGPVPNRBAC.action == rbac_db_models.ACCESS_SHARED,
+                     BGPVPNRBAC.target_tenant.in_(
+                         ['*', context.tenant_id]))).count() != 0)
+
     @db_api.CONTEXT_WRITER
     def create_bgpvpn(self, context, bgpvpn):
         rt = utils.rtrd_list2str(bgpvpn['route_targets'])
@@ -306,26 +324,30 @@ class BGPVPNPluginDb():
         e_rt = utils.rtrd_list2str(bgpvpn['export_targets'])
         rd = utils.rtrd_list2str(bgpvpn.get('route_distinguishers', ''))
 
-        bgpvpn_db = BGPVPN(
-            id=uuidutils.generate_uuid(),
-            tenant_id=bgpvpn['tenant_id'],
-            name=bgpvpn['name'],
-            type=bgpvpn['type'],
-            route_targets=rt,
-            import_targets=i_rt,
-            export_targets=e_rt,
-            route_distinguishers=rd,
-            vni=bgpvpn.get(bgpvpn_vni_def.VNI),
-            local_pref=bgpvpn.get(bgpvpn_rc_def.LOCAL_PREF_KEY),
-        )
-        context.session.add(bgpvpn_db)
-        return self._make_bgpvpn_dict(bgpvpn_db)
+        with db_api.CONTEXT_WRITER.using(context):
+            bgpvpn_db = BGPVPN(
+                id=uuidutils.generate_uuid(),
+                tenant_id=bgpvpn['tenant_id'],
+                name=bgpvpn['name'],
+                type=bgpvpn['type'],
+                route_targets=rt,
+                import_targets=i_rt,
+                export_targets=e_rt,
+                route_distinguishers=rd,
+                vni=bgpvpn.get(bgpvpn_vni_def.VNI),
+                local_pref=bgpvpn.get(bgpvpn_rc_def.LOCAL_PREF_KEY),
+            )
+            context.session.add(bgpvpn_db)
+
+        return self._make_bgpvpn_dict(context, bgpvpn_db)
 
     @db_api.CONTEXT_READER
     def get_bgpvpns(self, context, filters=None, fields=None):
-        return model_query.get_collection(
-            context, BGPVPN, self._make_bgpvpn_dict,
+        objs = model_query.get_collection(
+            context, BGPVPN, None,
             filters=filters, fields=fields)
+        return [self._make_bgpvpn_dict(
+                context, obj, fields=fields) for obj in objs]
 
     @db_api.CONTEXT_READER
     def _get_bgpvpn(self, context, id):
@@ -337,7 +359,7 @@ class BGPVPNPluginDb():
     @db_api.CONTEXT_READER
     def get_bgpvpn(self, context, id, fields=None):
         bgpvpn_db = self._get_bgpvpn(context, id)
-        return self._make_bgpvpn_dict(bgpvpn_db, fields)
+        return self._make_bgpvpn_dict(context, bgpvpn_db, fields)
 
     @db_api.CONTEXT_WRITER
     def update_bgpvpn(self, context, id, bgpvpn):
@@ -357,12 +379,12 @@ class BGPVPNPluginDb():
                 rd = utils.rtrd_list2str(bgpvpn['route_distinguishers'])
                 bgpvpn['route_distinguishers'] = rd
             bgpvpn_db.update(bgpvpn)
-        return self._make_bgpvpn_dict(bgpvpn_db)
+        return self._make_bgpvpn_dict(context, bgpvpn_db)
 
     @db_api.CONTEXT_WRITER
     def delete_bgpvpn(self, context, id):
         bgpvpn_db = self._get_bgpvpn(context, id)
-        bgpvpn = self._make_bgpvpn_dict(bgpvpn_db)
+        bgpvpn = self._make_bgpvpn_dict(context, bgpvpn_db)
         context.session.delete(bgpvpn_db)
         return bgpvpn
 
