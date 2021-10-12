@@ -10,8 +10,49 @@
 #  License for the specific language governing permissions and limitations
 #  under the License.
 
+import itertools
+
 from neutron.conf.services import provider_configuration
 from oslo_config import cfg
+
+
+BGPVPN_CONFIG_OPTS = [
+    cfg.StrOpt('region_asn',
+               default=None,
+               help='The unique region 4-byte ASn identifier for'
+                    'import/export/route targets. Should be in dotted notation'
+                    ' <ASN>.<Number>'),
+    cfg.StrOpt('target_id_range',
+               default='300-1000',
+               help='The range of unique numbers for import/export/route '
+                    'targets'),
+    cfg.BoolOpt('import_target_auto_allocation',
+                default=False,
+                help='This option enables auto-allocation for import targets'
+                     'for a new bgpvpns created with empty import_targets '
+                     'field.'),
+    cfg.BoolOpt('export_target_auto_allocation',
+                default=False,
+                help='This option enables auto-allocation for export targets'
+                     'for a new bgpvpns created with empty export_targets '
+                     'field.'),
+    cfg.BoolOpt('route_target_auto_allocation',
+                default=False,
+                help='This option enables auto-allocation for route targets'
+                     'for a new bgpvpns created with empty route_targets '
+                     'field.'),
+]
+
+
+def register_bgpvpn_options(cfg=cfg.CONF):
+    cfg.register_opts(BGPVPN_CONFIG_OPTS, group='bgpvpn')
+
+
+def list_bgpvpn_opts():
+    return [
+        ('bgpvpn', itertools.chain(
+            BGPVPN_CONFIG_OPTS)),
+    ]
 
 
 def list_service_provider():
