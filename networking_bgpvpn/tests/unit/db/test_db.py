@@ -248,6 +248,28 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
         bgpvpn = self.plugin_db.get_bgpvpn(ctx, bgpvpn['id'])
         self.assertEqual(True, bgpvpn['shared'])
 
+    def test_get_allocated_targets(self):
+        target_fields = ["route_targets", "import_targets", "export_targets"]
+        for i in range(3):
+            for f in range(3):
+                body = {
+                    "tenant_id": self.ctx.tenant_id,
+                    "type": "l3",
+                    "name": "",
+                    "route_targets": [],
+                    "import_targets": [],
+                    "export_targets": [],
+                }
+                body[target_fields[f]] = ["6451%s:%s" % (i, f)]
+                self.plugin_db.create_bgpvpn(
+                    self.ctx,
+                    body
+                )
+        alloc_targets = self.plugin_db.get_allocated_targets(self.ctx)
+        self.assertEqual({'64511:1', '64510:2', '64512:0', '64510:1',
+                          '64512:2', '64510:0', '64511:0', '64511:2',
+                          '64512:1'}, alloc_targets)
+
     def test_db_associate_disassociate_net(self):
         with self.network() as net:
             net_id = net['network']['id']
