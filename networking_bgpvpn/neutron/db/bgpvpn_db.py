@@ -18,6 +18,7 @@ from oslo_log import log
 from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy import and_
+from sqlalchemy import or_
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
@@ -316,6 +317,17 @@ class BGPVPNPluginDb():
                      BGPVPNRBAC.action == rbac_db_models.ACCESS_SHARED,
                      BGPVPNRBAC.target_tenant.in_(
                          ['*', context.tenant_id]))).count() != 0)
+
+    @db_api.CONTEXT_READER
+    def get_allocated_targets(self, context):
+        query = context.session.query(BGPVPN.route_targets,
+                                      BGPVPN.import_targets,
+                                      BGPVPN.export_targets)
+        query = query.filter(or_(BGPVPN.route_targets.isnot(None),
+                                 BGPVPN.import_targets.isnot(None),
+                                 BGPVPN.export_targets.isnot(None)))
+        # save route/import/export targets without duplicates
+        return {r for row in query.all() for r in row if r}
 
     @db_api.CONTEXT_WRITER
     def create_bgpvpn(self, context, bgpvpn):
