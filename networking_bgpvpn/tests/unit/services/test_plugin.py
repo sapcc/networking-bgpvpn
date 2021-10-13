@@ -16,9 +16,11 @@
 import contextlib
 import copy
 import mock
+import unittest
 import webob.exc
 
 from neutron_lib.plugins import directory
+from oslo_config import cfg
 from oslo_utils import uuidutils
 
 from neutron.api import extensions as api_extensions
@@ -32,6 +34,7 @@ from neutron_lib.api.definitions import bgpvpn_vni as bgpvpn_vni_def
 
 from networking_bgpvpn.neutron.db import bgpvpn_db
 from networking_bgpvpn.neutron import extensions
+from networking_bgpvpn.neutron import opts
 from networking_bgpvpn.neutron.services.common import constants
 from networking_bgpvpn.neutron.services import plugin
 from networking_bgpvpn.neutron.services.service_drivers import driver_api
@@ -75,6 +78,12 @@ class BgpvpnTestCaseMixin(test_db_base_plugin_v2.NeutronDbPluginV2TestCase,
         }
         if len(bits) == 4:
             provider['default'] = True
+        # set config options
+        opts.register_bgpvpn_options(cfg.CONF)
+        cfg.CONF.set_override('import_target_auto_allocation', True, 'bgpvpn')
+        cfg.CONF.set_override('export_target_auto_allocation', True, 'bgpvpn')
+        cfg.CONF.set_override('route_target_auto_allocation', True, 'bgpvpn')
+        cfg.CONF.set_override('region_asn', '65130.4', 'bgpvpn')
         # override the default service provider
         self.service_providers = (
             mock.patch.object(sdb.ServiceTypeManager,
@@ -235,6 +244,100 @@ class BgpvpnTestCaseMixin(test_db_base_plugin_v2.NeutronDbPluginV2TestCase,
 
 
 class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
+
+    def test___available_targets_disabled_auto_alloc(self):
+        with mock.patch.object(self.bgpvpn_plugin,
+                               'bgpvpn_config') as config:
+            config.region_asn = ''
+            # to test exception message we have to use assertRaises from
+            # unittest library instead of testtools
+            with unittest.TestCase.assertRaises(self, ValueError) as cm:
+                self.bgpvpn_plugin._available_targets()
+            self.assertIn('is required for auto-allocation', str(cm.exception))
+
+    def test___available_targets_incorrect_asn_notation(self):
+        # notation is not dotted
+        with mock.patch.object(self.bgpvpn_plugin,
+                               'bgpvpn_config') as config:
+            config.region_asn = '65130'
+            # to test exception message we have to use assertRaises from
+            # unittest library instead of testtools
+            with unittest.TestCase.assertRaises(self, ValueError) as cm:
+                self.bgpvpn_plugin._available_targets()
+            self.assertIn('4-byte dotted notation', str(cm.exception))
+        # ASn out of private range
+        with mock.patch.object(self.bgpvpn_plugin,
+                               'bgpvpn_config') as config:
+            config.region_asn = '123.4'
+            # to test exception message we have to use assertRaises from
+            # unittest library instead of testtools
+            with unittest.TestCase.assertRaises(self, ValueError) as cm:
+                self.bgpvpn_plugin._available_targets()
+            self.assertIn('private range', str(cm.exception))
+
+    def test___available_targets(self):
+        with mock.patch.object(self.bgpvpn_plugin,
+                               'bgpvpn_config') as config:
+            config.region_asn = '65130.4'
+            config.target_id_range = '1-2,5,8'
+            self.assertEqual(['4268359684:1', '4268359684:2', '4268359684:5',
+                              '4268359684:8'],
+                             self.bgpvpn_plugin._available_targets())
+
+    def test_bgpvpn_auto_allocation_targets(self):
+        with self.bgpvpn(export_targets=['4268359684:300'],
+                         import_targets=['4268359684:302'],
+                         route_targets=[]) as bgpvpn_1, \
+                self.bgpvpn(export_targets=[],
+                            import_targets=[],
+                            route_targets=[]) as bgpvpn_2, \
+                self.bgpvpn(export_targets=[],
+                            import_targets=[],
+                            route_targets=[]) as bgpvpn_3:
+            # check that auto-allocation disabled for non-empty fields
+            self.assertEqual([],
+                             bgpvpn_1['bgpvpn']['route_targets'])
+            self.assertEqual(['4268359684:302'],
+                             bgpvpn_1['bgpvpn']['import_targets'])
+            self.assertEqual(['4268359684:300'],
+                             bgpvpn_1['bgpvpn']['export_targets'])
+            # check that auto-allocation choose only available targets
+            self.assertEqual(['4268359684:301'],
+                             bgpvpn_2['bgpvpn']['route_targets'])
+            self.assertEqual(['4268359684:301'],
+                             bgpvpn_2['bgpvpn']['import_targets'])
+            self.assertEqual(['4268359684:301'],
+                             bgpvpn_2['bgpvpn']['export_targets'])
+            # check that auto-allocation knows about manual target
+            # 4268359684:302 and will not use it
+            self.assertEqual(['4268359684:303'],
+                             bgpvpn_3['bgpvpn']['route_targets'])
+            self.assertEqual(['4268359684:303'],
+                             bgpvpn_3['bgpvpn']['import_targets'])
+            self.assertEqual(['4268359684:303'],
+                             bgpvpn_3['bgpvpn']['export_targets'])
+
+    def test_bgpvpn_create_without_targets(self):
+        with mock.patch.object(self.bgpvpn_plugin,
+                               'bgpvpn_config') as config:
+            config.import_target_auto_allocation = False
+            config.export_target_auto_allocation = False
+            config.route_target_auto_allocation = False
+            req_data = {
+                'bgpvpn': {
+                    'tenant_id': self._tenant_id,
+                    'export_targets': [],
+                    'import_targets': [],
+                    'route_targets': [],
+                },
+            }
+            req = self.new_create_request(
+                'bgpvpn/bgpvpns', req_data, fmt='json')
+            res = req.get_response(self.ext_api)
+            self.assertEqual(400, res.status_int)
+            self.assertIn('Targets fields required.',
+                          self.deserialize('json',
+                                           res)['NeutronError']['message'])
 
     def test_bgpvpn_net_assoc_create(self):
         with self.network() as net, \
