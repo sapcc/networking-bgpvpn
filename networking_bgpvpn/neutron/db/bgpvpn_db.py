@@ -315,7 +315,7 @@ class BGPVPNPluginDb():
         return (context.session.query(BGPVPNRBAC).filter(
                 and_(BGPVPNRBAC.object_id == bgpvpn_db['id'],
                      BGPVPNRBAC.action == rbac_db_models.ACCESS_SHARED,
-                     BGPVPNRBAC.target_tenant.in_(
+                     BGPVPNRBAC.target_project.in_(
                          ['*', context.tenant_id]))).count() != 0)
 
     @db_api.CONTEXT_READER

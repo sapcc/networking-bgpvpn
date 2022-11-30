@@ -233,18 +233,18 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
                 "local_pref": "777"
             }
         )
-        target_tenant = uuidutils.generate_uuid()
+        target_project = uuidutils.generate_uuid()
         with db_api.CONTEXT_WRITER.using(self.ctx):
             self.ctx.session.add(BGPVPNRBAC(
                 object_id=bgpvpn['id'],
-                target_tenant=target_tenant,
+                target_project=target_project,
                 action=rbac_db_models.ACCESS_SHARED,
                 object_type=BGPVPNRBAC.object_type,
                 project_id=self._tenant_id,
             ))
 
         # check
-        ctx = context.Context(tenant_id=target_tenant, overwrite=False)
+        ctx = context.Context(tenant_id=target_project, overwrite=False)
         bgpvpn = self.plugin_db.get_bgpvpn(ctx, bgpvpn['id'])
         self.assertEqual(True, bgpvpn['shared'])
 
