@@ -5,12 +5,9 @@ name: Python package
 
 on:
   push:
-    branches: [ stable/yoga-m3 ]
+    branches: [ stable/2024.1-m3 ]
   pull_request:
-    branches: [ stable/yoga-m3 ]
-
-env:
-  VIRTUALENV_PIP: "20.2.3"
+    branches: [ stable/2024.1-m3 ]
 
 jobs:
   build:
@@ -18,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: [3.7]
+        python: ['3.10']
 
     steps:
       - uses: actions/checkout@v2
@@ -32,4 +29,4 @@ jobs:
           sudo apt-get -y install build-essential netbase
           pip install tox
       - name: Run Tox
-        run: tox -e pep8,py37,functional -vvv
+        run: tox -e pep8,py310,functional -vvv
