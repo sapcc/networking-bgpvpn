@@ -345,7 +345,7 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
                 },
             }
             req = self.new_create_request(
-                'bgpvpn/bgpvpns', req_data, fmt='json')
+                'bgpvpn/bgpvpns', req_data, fmt='json', as_admin=True)
             res = req.get_response(self.ext_api)
             self.assertEqual(400, res.status_int)
             self.assertIn('Targets fields required.',
@@ -376,7 +376,8 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
                 data=data,
                 fmt=self.fmt,
                 id=id,
-                subresource='network_associations')
+                subresource='network_associations',
+                as_admin=True)
             res = bgpvpn_net_req.get_response(self.ext_api)
             self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
@@ -468,7 +469,8 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
                     data=data,
                     fmt=self.fmt,
                     id=id,
-                    subresource='router_associations')
+                    subresource='router_associations',
+                    as_admin=True)
                 res = bgpvpn_router_req.get_response(self.ext_api)
                 self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
 
