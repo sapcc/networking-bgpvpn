@@ -13,7 +13,6 @@
 from neutron_lib import policy as base
 from oslo_policy import policy
 
-from neutron.conf.policies import base as common_base
 
 rules = [
     policy.RuleDefault(
@@ -126,7 +125,7 @@ rules = [
     ),
     policy.DocumentedRuleDefault(
         'get_bgpvpn',
-        common_base.policy_or(
+        base.policy_or(
             base.RULE_ADMIN_OR_OWNER,
             'rule:shared_bgpvpns',
         ),
