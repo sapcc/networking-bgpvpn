@@ -25,6 +25,7 @@ from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
 from neutron_lib import constants as const
+from neutron_lib.db import api as db_api
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import constants as plugin_constants
 from neutron_lib.plugins import directory
@@ -192,12 +193,13 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
                             bgpvpn['export_targets'] = [target]
                         if self.bgpvpn_config.route_target_auto_allocation:
                             bgpvpn['route_targets'] = [target]
-                        return
+                        return True
             else:
                 msg = ('Targets fields required. One of the fields: '
                        'export_targets, import_targets, route_target must be '
                        'passed.')
                 raise n_exc.BadRequest(resource='bgpvpn', msg=msg)
+        return False
 
     def _available_targets(self):
         if not self._is_targets_auto_allocation_enabled():
@@ -238,10 +240,11 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
     def get_plugin_description(self):
         return "Neutron BGPVPN Service Plugin"
 
+    @db_api.retry_if_session_inactive()
     def create_bgpvpn(self, context, bgpvpn):
         bgpvpn = bgpvpn['bgpvpn']
-        self._validate_targets(context, bgpvpn)
-        return self.driver.create_bgpvpn(context, bgpvpn)
+        auto_allocated = self._validate_targets(context, bgpvpn)
+        return self.driver.create_bgpvpn(context, bgpvpn, auto_allocated)
 
     def get_bgpvpns(self, context, filters=None, fields=None):
         return self.driver.get_bgpvpns(context, filters, fields)

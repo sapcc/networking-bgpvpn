@@ -33,6 +33,7 @@ from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions.test_l3 import TestL3NatServicePlugin
 from neutron_lib.api.definitions import bgpvpn as bgpvpn_def
 from neutron_lib.api.definitions import bgpvpn_vni as bgpvpn_vni_def
+from neutron_lib import fixture
 
 from networking_bgpvpn.neutron.db import bgpvpn_db
 from networking_bgpvpn.neutron import extensions
@@ -126,6 +127,8 @@ class BgpvpnTestCaseMixin(test_db_base_plugin_v2.NeutronDbPluginV2TestCase,
         self.bgpvpn_data = {'bgpvpn': {'name': 'bgpvpn1',
                                        'type': 'l3',
                                        'route_targets': ['1234:56'],
+                                       'import_targets': [],
+                                       "export_targets": [],
                                        'tenant_id': self._tenant_id}}
         self.converted_data = copy.copy(self.bgpvpn_data)
         self.converted_data['bgpvpn'].update({'export_targets': [],
@@ -794,8 +797,9 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
         with self.network() as net, \
                 self.subnet(network={'network': net['network']}) as subnet, \
                 self.port(subnet={'subnet': subnet['subnet']}) as port, \
-                self.bgpvpn() as bgpvpn, \
-                self.bgpvpn(tenant_id="notus") as bgpvpn_other:
+                self.bgpvpn(route_targets=['1234:56']) as bgpvpn, \
+                self.bgpvpn(tenant_id="notus",
+                            route_targets=['78:56']) as bgpvpn_other:
 
             data = {'port_association': {
                     'port_id': port['port']['id'],
@@ -906,8 +910,9 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
         with self.network() as net, \
                 self.subnet(network={'network': net['network']}) as subnet, \
                 self.port(subnet={'subnet': subnet['subnet']}) as port, \
-                self.bgpvpn() as bgpvpn, \
-                self.bgpvpn(tenant_id="not-us") as bgpvpn_other, \
+                self.bgpvpn(route_targets=['1234:56']) as bgpvpn, \
+                self.bgpvpn(tenant_id="not-us",
+                            route_targets=['78:56']) as bgpvpn_other, \
                 self.assoc_port(bgpvpn['bgpvpn']['id'],
                                 port['port']['id']) as port_assoc:
 
@@ -936,8 +941,8 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
         with self.network() as net, \
                 self.subnet(network={'network': net['network']}) as subnet, \
                 self.port(subnet={'subnet': subnet['subnet']}) as port, \
-                self.bgpvpn(type='l2') as bgpvpn_l2, \
-                self.bgpvpn(type='l3') as bgpvpn_l3, \
+                self.bgpvpn(type='l2', route_targets=['12:56']) as bgpvpn_l2, \
+                self.bgpvpn(type='l3', route_targets=['78:56']) as bgpvpn_l3, \
                 self.assoc_port(bgpvpn_l2['bgpvpn']['id'],
                                 port['port']['id']) as port_assoc:
 
@@ -988,6 +993,39 @@ class TestBGPVPNServiceDriverDB(BgpvpnTestCaseMixin):
                 mock.ANY, self.converted_data['bgpvpn'])
             mock_create_postcommit.assert_called_once_with(
                 mock.ANY, self.converted_data['bgpvpn'])
+
+    @mock.patch.object(plugin.BGPVPNPlugin,
+                       '_validate_targets')
+    def test_create_bgpvpn_duplicate_rts(self, mock_validate_targets):
+        import_targets = ["1000000000:1111"]
+        export_targets = ["2000000000:2222"]
+
+        bgpvpn_1 = copy.deepcopy(self.bgpvpn_data)
+        bgpvpn_1["bgpvpn"]['import_targets'] = import_targets
+        bgpvpn_1["bgpvpn"]['export_targets'] = export_targets
+
+        # Create bgpvpn with same import/export targets
+        bgpvpn_2 = copy.deepcopy(self.bgpvpn_data)
+        bgpvpn_2["bgpvpn"]['import_targets'] = import_targets
+        bgpvpn_2["bgpvpn"]['export_targets'] = export_targets
+
+        mock_validate_targets.return_value = True
+
+        # Only retrie once if bgpvpn creation intentionally fails
+        retry_fixture = fixture.DBRetryErrorsFixture(max_retries=1)
+        retry_fixture.setUp()
+
+        with (unittest.TestCase.assertRaises(self, webob.exc.HTTPClientError)):
+            with self.bgpvpn(data=bgpvpn_1):
+                with self.bgpvpn(data=bgpvpn_2):
+                    pass
+
+        bgpvpn_3 = copy.deepcopy(self.bgpvpn_data)
+        bgpvpn_3["bgpvpn"]['route_targets'] = []
+        bgpvpn_3["bgpvpn"]['import_targets'] = ["1000000000:2000"]
+        bgpvpn_3["bgpvpn"]['export_targets'] = ["1000000000:2000"]
+        with self.bgpvpn(data=bgpvpn_3) as b:
+            print(b)
 
     def test_create_bgpvpn_precommit_fails(self):
         with mock.patch.object(driver_api.BGPVPNDriver,

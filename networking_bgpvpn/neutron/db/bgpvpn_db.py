@@ -362,6 +362,19 @@ class BGPVPNPluginDb():
                 context, obj, fields=fields) for obj in objs]
 
     @db_api.CONTEXT_READER
+    def count_bgpvpns_by_route_targets(self, context, route_targets):
+        query = context.session.query(BGPVPN.id)
+
+        filters = []
+        for rt in route_targets:
+            filters.append(BGPVPN.import_targets.like(f"%{rt}%"))
+            filters.append(BGPVPN.export_targets.like(f"%{rt}%"))
+            filters.append(BGPVPN.route_targets.like(f"%{rt}%"))
+
+        query = query.filter(or_(*filters))
+        return query.count()
+
+    @db_api.CONTEXT_READER
     def _get_bgpvpn(self, context, id):
         try:
             return model_query.get_by_id(context, BGPVPN, id)
@@ -393,6 +406,7 @@ class BGPVPNPluginDb():
             bgpvpn_db.update(bgpvpn)
         return self._make_bgpvpn_dict(context, bgpvpn_db)
 
+    @db_api.retry_if_session_inactive()
     @db_api.CONTEXT_WRITER
     def delete_bgpvpn(self, context, id):
         bgpvpn_db = self._get_bgpvpn(context, id)

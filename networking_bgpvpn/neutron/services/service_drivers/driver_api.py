@@ -17,10 +17,14 @@ import abc
 import copy
 
 from neutron_lib.db import api as db_api
+from oslo_db import exception as db_exc
+from oslo_log import log
 
 from networking_bgpvpn.neutron.db import bgpvpn_db
 from networking_bgpvpn.neutron.extensions \
     import bgpvpn_routes_control as bgpvpn_rc
+
+LOG = log.getLogger(__name__)
 
 
 class BGPVPNDriverBase(metaclass=abc.ABCMeta):
@@ -102,11 +106,39 @@ class BGPVPNDriverDBMixin(BGPVPNDriverBase, metaclass=abc.ABCMeta):
         super().__init__(*args, **kwargs)
         self.bgpvpn_db = bgpvpn_db.BGPVPNPluginDb()
 
-    def create_bgpvpn(self, context, bgpvpn):
+    def create_bgpvpn(self, context, bgpvpn, auto_allocated=False):
         with db_api.CONTEXT_WRITER.using(context):
             bgpvpn = self.bgpvpn_db.create_bgpvpn(
                 context, bgpvpn)
             self.create_bgpvpn_precommit(context, bgpvpn)
+
+        if auto_allocated:
+            # Check for duplicate as auto allocation is not thread safe
+            # It holds: import_targets == export_targets
+            # Auto allocation does not use route_targets
+            count = self.bgpvpn_db.count_bgpvpns_by_route_targets(
+                            context,
+                            route_targets=bgpvpn.get("import_targets"))
+            if count > 1:
+                LOG.info(
+                    "Duplicate route target(s) %s detected for "
+                    "newly created BGPVPN %s. "
+                    "Auto allocation may have collided with another"
+                    "concurrent request. "
+                    "Initiating cleanup and retry.",
+                    bgpvpn.get("import_targets"),
+                    bgpvpn.get("id"),
+                )
+                try:
+                    self.delete_bgpvpn(context, bgpvpn.get("id"))
+                except bgpvpn.BGPVPNNotFound:
+                    LOG.info(
+                        "BGPVPN %s not found during duplicate cleanup — "
+                        "it may have already been deleted by another process.",
+                        bgpvpn.get("id"),
+                    )
+                raise db_exc.DBDuplicateEntry()
+
         self.create_bgpvpn_postcommit(context, bgpvpn)
         return bgpvpn
 

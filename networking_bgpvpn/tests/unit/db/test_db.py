@@ -12,7 +12,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import copy
+
 from oslo_utils import uuidutils
+from unittest import mock
 
 from neutron.db import rbac_db_models
 from neutron_lib.api.definitions import bgpvpn_routes_control as bgpvpn_rc_def
@@ -28,6 +31,7 @@ from networking_bgpvpn.neutron.extensions.bgpvpn import BGPVPNNetAssocNotFound
 from networking_bgpvpn.neutron.extensions.bgpvpn import BGPVPNNotFound
 from networking_bgpvpn.neutron.services.common import constants
 from networking_bgpvpn.neutron.services.common import utils
+from networking_bgpvpn.neutron.services import plugin
 from networking_bgpvpn.tests.unit.services import test_plugin
 
 
@@ -538,6 +542,52 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
                 {'port_association': {'routes': []}}
             )
             self.assertEqual(0, len(res['port_association']['routes']))
+
+    @mock.patch.object(plugin.BGPVPNPlugin,
+                       '_validate_targets')
+    def test_count_bgpvpns_by_route_targets(self, mock_validate_targets):
+        mock_validate_targets.return_value = False
+
+        template = {'bgpvpn': {'name': 'bgpvpn1',
+                    'type': 'l3',
+                    'route_targets': [],
+                    'import_targets': [],
+                    "export_targets": [],
+                    'tenant_id': self._tenant_id}}
+
+        BGPVPN_A = copy.deepcopy(template)
+        BGPVPN_B = copy.deepcopy(template)
+        BGPVPN_C = copy.deepcopy(template)
+
+        route_target_1 = ['1234:56']
+        route_target_2 = ['2234:56']
+
+        BGPVPN_A["bgpvpn"]['route_targets'] = route_target_1
+        BGPVPN_B["bgpvpn"]["route_targets"] = route_target_1
+        BGPVPN_C["bgpvpn"]["route_targets"] = route_target_2
+
+        with self.bgpvpn(data=BGPVPN_A):
+            with self.bgpvpn(data=BGPVPN_B):
+                with self.bgpvpn(data=BGPVPN_C) as bgpvpn_c:
+                    # Match BGPVPN with none matching route_target
+                    count_1 = self.plugin_db.count_bgpvpns_by_route_targets(
+                        self.ctx, route_target_1)
+                    self.assertEqual(2, count_1)
+
+                    # Match BGPVPN with matching route_target
+                    count_2 = self.plugin_db.count_bgpvpns_by_route_targets(
+                        self.ctx, route_target_2)
+                    self.assertEqual(1, count_2)
+
+                    # Match BGPVPN with single matching route_target
+                    route_target_3 = ['1234:56', '2234:56']
+                    bgpvpn_c["bgpvpn"]["route_targets"] = route_target_3
+                    id = bgpvpn_c["bgpvpn"]["id"]
+                    self.plugin_db.update_bgpvpn(self.ctx, id,
+                                                 bgpvpn_c["bgpvpn"])
+                    count_3 = self.plugin_db.count_bgpvpns_by_route_targets(
+                        self.ctx, route_target_1)
+                    self.assertEqual(3, count_3)
 
 
 class BgpvpnDBTestCaseWithVNI(BgpvpnDBTestCase):
