@@ -14,6 +14,7 @@
 #    under the License.
 
 import copy
+import random
 
 from neutron.db import servicetype_db as st_db
 from neutron.objects import base
@@ -185,7 +186,12 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
             if self._is_targets_auto_allocation_enabled():
                 alloc_targets = self.driver.bgpvpn_db.get_allocated_targets(
                     context)
-                for target in self.bgpvpn_available_targets:
+
+                # Randomize how free route targets get allocated
+                _available_targets = copy.copy(self.bgpvpn_available_targets)
+                random.shuffle(_available_targets)
+
+                for target in _available_targets:
                     if target not in alloc_targets:
                         if self.bgpvpn_config.import_target_auto_allocation:
                             bgpvpn['import_targets'] = [target]

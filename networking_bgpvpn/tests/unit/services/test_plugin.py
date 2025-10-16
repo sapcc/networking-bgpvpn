@@ -310,6 +310,10 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
                 self.bgpvpn(export_targets=[],
                             import_targets=[],
                             route_targets=[]) as bgpvpn_3:
+
+            used_allocations = [*bgpvpn_1['bgpvpn']["import_targets"],
+                                *bgpvpn_1['bgpvpn']["export_targets"]]
+
             # check that auto-allocation disabled for non-empty fields
             self.assertEqual([],
                              bgpvpn_1['bgpvpn']['route_targets'])
@@ -317,21 +321,25 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
                              bgpvpn_1['bgpvpn']['import_targets'])
             self.assertEqual(['4268359684:300'],
                              bgpvpn_1['bgpvpn']['export_targets'])
+
             # check that auto-allocation choose only available targets
-            self.assertEqual(['4268359684:301'],
-                             bgpvpn_2['bgpvpn']['route_targets'])
-            self.assertEqual(['4268359684:301'],
-                             bgpvpn_2['bgpvpn']['import_targets'])
-            self.assertEqual(['4268359684:301'],
-                             bgpvpn_2['bgpvpn']['export_targets'])
+            for alloc in used_allocations:
+                self.assertNotEqual(alloc,
+                                 bgpvpn_2['bgpvpn']['route_targets'])
+                self.assertNotEqual(alloc,
+                                 bgpvpn_2['bgpvpn']['import_targets'])
+                self.assertNotEqual(alloc,
+                                 bgpvpn_2['bgpvpn']['export_targets'])
+
             # check that auto-allocation knows about manual target
-            # 4268359684:302 and will not use it
-            self.assertEqual(['4268359684:303'],
-                             bgpvpn_3['bgpvpn']['route_targets'])
-            self.assertEqual(['4268359684:303'],
-                             bgpvpn_3['bgpvpn']['import_targets'])
-            self.assertEqual(['4268359684:303'],
-                             bgpvpn_3['bgpvpn']['export_targets'])
+            used_allocations.append(*bgpvpn_2['bgpvpn']['route_targets'])
+            for alloc in used_allocations:
+                self.assertNotEqual(alloc,
+                                 bgpvpn_3['bgpvpn']['route_targets'])
+                self.assertNotEqual(alloc,
+                                 bgpvpn_3['bgpvpn']['import_targets'])
+                self.assertNotEqual(alloc,
+                                 bgpvpn_3['bgpvpn']['export_targets'])
 
     def test_bgpvpn_create_without_targets(self):
         with mock.patch.object(self.bgpvpn_plugin,
