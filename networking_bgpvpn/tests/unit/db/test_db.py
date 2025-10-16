@@ -274,6 +274,21 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
                           '64512:2', '64510:0', '64511:0', '64511:2',
                           '64512:1'}, alloc_targets)
 
+    def test_get_allocated_targets_for_multiple_bgpvpn_targets(self):
+        route_targets = ["1000:1000", "2000:2000"]
+        import_targets = ["1000:1000", "2000:2000", "3000:3000"]
+
+        bgpvpn_1 = copy.deepcopy(self.bgpvpn_data)
+        bgpvpn_1['bgpvpn']['route_targets'] = route_targets
+        bgpvpn_1['bgpvpn']['import_targets'] = import_targets
+        bgpvpn_1['bgpvpn']['export_targets'] = import_targets
+
+        self.plugin_db.create_bgpvpn(self.ctx, bgpvpn_1['bgpvpn'])
+
+        alloc_targets = self.plugin_db.get_allocated_targets(self.ctx)
+        self.assertEqual({'1000:1000', '2000:2000', '3000:3000'},
+                         alloc_targets)
+
     def test_db_associate_disassociate_net(self):
         with self.network() as net:
             net_id = net['network']['id']

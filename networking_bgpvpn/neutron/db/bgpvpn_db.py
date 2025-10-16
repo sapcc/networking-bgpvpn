@@ -327,7 +327,12 @@ class BGPVPNPluginDb():
                                  BGPVPN.import_targets.isnot(None),
                                  BGPVPN.export_targets.isnot(None)))
         # save route/import/export targets without duplicates
-        return {r for row in query.all() for r in row if r}
+        allocated_route_targets = set()
+        for row in query.all():
+            for r in row:
+                if r:
+                    allocated_route_targets.update(r.split(','))
+        return allocated_route_targets
 
     @db_api.CONTEXT_WRITER
     def create_bgpvpn(self, context, bgpvpn):
