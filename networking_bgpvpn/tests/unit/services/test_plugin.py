@@ -24,6 +24,8 @@ from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_utils import uuidutils
 
+from oslo_db.exception import DBDuplicateEntry
+
 from neutron.api import extensions as api_extensions
 from neutron.db import servicetype_db as sdb
 from neutron import extensions as n_extensions
@@ -1002,9 +1004,7 @@ class TestBGPVPNServiceDriverDB(BgpvpnTestCaseMixin):
             mock_create_postcommit.assert_called_once_with(
                 mock.ANY, self.converted_data['bgpvpn'])
 
-    @mock.patch.object(plugin.BGPVPNPlugin,
-                       '_validate_targets')
-    def test_create_bgpvpn_duplicate_rts(self, mock_validate_targets):
+    def test_create_bgpvpn_duplicate_rts(self):
         import_targets = ["1000000000:1111"]
         export_targets = ["2000000000:2222"]
 
@@ -1017,9 +1017,7 @@ class TestBGPVPNServiceDriverDB(BgpvpnTestCaseMixin):
         bgpvpn_2["bgpvpn"]['import_targets'] = import_targets
         bgpvpn_2["bgpvpn"]['export_targets'] = export_targets
 
-        mock_validate_targets.return_value = True
-
-        # Only retrie once if bgpvpn creation intentionally fails
+        # Only retry once if bgpvpn creation intentionally fails
         retry_fixture = fixture.DBRetryErrorsFixture(max_retries=1)
         retry_fixture.setUp()
 
@@ -1027,13 +1025,6 @@ class TestBGPVPNServiceDriverDB(BgpvpnTestCaseMixin):
             with self.bgpvpn(data=bgpvpn_1):
                 with self.bgpvpn(data=bgpvpn_2):
                     pass
-
-        bgpvpn_3 = copy.deepcopy(self.bgpvpn_data)
-        bgpvpn_3["bgpvpn"]['route_targets'] = []
-        bgpvpn_3["bgpvpn"]['import_targets'] = ["1000000000:2000"]
-        bgpvpn_3["bgpvpn"]['export_targets'] = ["1000000000:2000"]
-        with self.bgpvpn(data=bgpvpn_3) as b:
-            print(b)
 
     def test_create_bgpvpn_precommit_fails(self):
         with mock.patch.object(driver_api.BGPVPNDriver,

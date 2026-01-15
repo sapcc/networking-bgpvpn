@@ -199,13 +199,11 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
                             bgpvpn['export_targets'] = [target]
                         if self.bgpvpn_config.route_target_auto_allocation:
                             bgpvpn['route_targets'] = [target]
-                        return True
             else:
                 msg = ('Targets fields required. One of the fields: '
                        'export_targets, import_targets, route_target must be '
                        'passed.')
                 raise n_exc.BadRequest(resource='bgpvpn', msg=msg)
-        return False
 
     def _available_targets(self):
         if not self._is_targets_auto_allocation_enabled():
@@ -249,8 +247,8 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
     @db_api.retry_if_session_inactive()
     def create_bgpvpn(self, context, bgpvpn):
         bgpvpn = bgpvpn['bgpvpn']
-        auto_allocated = self._validate_targets(context, bgpvpn)
-        return self.driver.create_bgpvpn(context, bgpvpn, auto_allocated)
+        self._validate_targets(context, bgpvpn)
+        return self.driver.create_bgpvpn(context, bgpvpn)
 
     def get_bgpvpns(self, context, filters=None, fields=None):
         return self.driver.get_bgpvpns(context, filters, fields)

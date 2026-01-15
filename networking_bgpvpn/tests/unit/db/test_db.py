@@ -575,7 +575,8 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
         BGPVPN_C = copy.deepcopy(template)
 
         route_target_1 = ['1234:56']
-        route_target_2 = ['2234:56']
+        # test exact match after running a fuzzy search
+        route_target_2 = ['1234:567']
 
         BGPVPN_A["bgpvpn"]['route_targets'] = route_target_1
         BGPVPN_B["bgpvpn"]["route_targets"] = route_target_1
