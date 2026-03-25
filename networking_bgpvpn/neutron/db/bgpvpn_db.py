@@ -327,7 +327,12 @@ class BGPVPNPluginDb():
                                  BGPVPN.import_targets.isnot(None),
                                  BGPVPN.export_targets.isnot(None)))
         # save route/import/export targets without duplicates
-        return {r for row in query.all() for r in row if r}
+        allocated_route_targets = set()
+        for row in query.all():
+            for r in row:
+                if r:
+                    allocated_route_targets.update(r.split(','))
+        return allocated_route_targets
 
     @db_api.CONTEXT_WRITER
     def create_bgpvpn(self, context, bgpvpn):
@@ -362,6 +367,35 @@ class BGPVPNPluginDb():
                 context, obj, fields=fields) for obj in objs]
 
     @db_api.CONTEXT_READER
+    def count_bgpvpns_by_route_targets(self, context, route_targets):
+        query = context.session.query(BGPVPN.id, BGPVPN.route_targets,
+                                BGPVPN.import_targets, BGPVPN.export_targets)
+
+        # route_targets is stored as a VARCHAR in the database
+        # e.g. '123:4567,123:4568'
+        # The current search uses fuzzy matching
+        # (e.g. '123:456' would match '123:4567')
+        # After running the fuzzy search, we need to filter
+        # the results to keep only exact matches
+        filters = []
+        for rt in route_targets:
+            filters.append(BGPVPN.import_targets.like(f"%{rt}%"))
+            filters.append(BGPVPN.export_targets.like(f"%{rt}%"))
+            filters.append(BGPVPN.route_targets.like(f"%{rt}%"))
+
+        query = query.filter(or_(*filters))
+
+        matching_bgpvpns_db = query.all()
+        counter = 0
+        for rt in utils.rtrd_str2list(route_targets):
+            for bgpvpn_db in matching_bgpvpns_db:
+                for key in 'route', 'import', 'export':
+                    if rt in utils.rtrd_str2list(bgpvpn_db[f'{key}_targets']):
+                        counter += 1
+                        break
+        return counter
+
+    @db_api.CONTEXT_READER
     def _get_bgpvpn(self, context, id):
         try:
             return model_query.get_by_id(context, BGPVPN, id)
@@ -393,6 +427,7 @@ class BGPVPNPluginDb():
             bgpvpn_db.update(bgpvpn)
         return self._make_bgpvpn_dict(context, bgpvpn_db)
 
+    @db_api.retry_if_session_inactive()
     @db_api.CONTEXT_WRITER
     def delete_bgpvpn(self, context, id):
         bgpvpn_db = self._get_bgpvpn(context, id)

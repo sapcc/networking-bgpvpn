@@ -14,6 +14,7 @@
 #    under the License.
 
 import copy
+import random
 
 from neutron.db import servicetype_db as st_db
 from neutron.objects import base
@@ -25,6 +26,7 @@ from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
 from neutron_lib import constants as const
+from neutron_lib.db import api as db_api
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import constants as plugin_constants
 from neutron_lib.plugins import directory
@@ -184,7 +186,12 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
             if self._is_targets_auto_allocation_enabled():
                 alloc_targets = self.driver.bgpvpn_db.get_allocated_targets(
                     context)
-                for target in self.bgpvpn_available_targets:
+
+                # Randomize how free route targets get allocated
+                _available_targets = copy.copy(self.bgpvpn_available_targets)
+                random.shuffle(_available_targets)
+
+                for target in _available_targets:
                     if target not in alloc_targets:
                         if self.bgpvpn_config.import_target_auto_allocation:
                             bgpvpn['import_targets'] = [target]
@@ -192,7 +199,6 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
                             bgpvpn['export_targets'] = [target]
                         if self.bgpvpn_config.route_target_auto_allocation:
                             bgpvpn['route_targets'] = [target]
-                        return
             else:
                 msg = ('Targets fields required. One of the fields: '
                        'export_targets, import_targets, route_target must be '
@@ -238,6 +244,7 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
     def get_plugin_description(self):
         return "Neutron BGPVPN Service Plugin"
 
+    @db_api.retry_if_session_inactive()
     def create_bgpvpn(self, context, bgpvpn):
         bgpvpn = bgpvpn['bgpvpn']
         self._validate_targets(context, bgpvpn)
