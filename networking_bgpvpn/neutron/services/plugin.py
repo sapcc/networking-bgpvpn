@@ -16,6 +16,7 @@
 import copy
 
 from neutron.db import servicetype_db as st_db
+from neutron.objects import base
 from neutron.services import provider_configuration as pconf
 from neutron.services import service_base
 
@@ -28,6 +29,7 @@ from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import constants as plugin_constants
 from neutron_lib.plugins import directory
 
+from oslo_config import cfg
 from oslo_log import log
 
 from networking_bgpvpn._i18n import _
@@ -35,9 +37,13 @@ from networking_bgpvpn._i18n import _
 from networking_bgpvpn.neutron.extensions import bgpvpn
 from networking_bgpvpn.neutron.extensions \
     import bgpvpn_routes_control as bgpvpn_rc
+from networking_bgpvpn.neutron.objects import bgpvpn as bgpvpn_rbac_obj
+from networking_bgpvpn.neutron import opts
 from networking_bgpvpn.neutron.services.common import constants
+from networking_bgpvpn.neutron.services.common import utils
 
 LOG = log.getLogger(__name__)
+CONF = cfg.CONF
 
 # ("BGPVPN" is the string to match as the first part of the
 # service_provider configuration: "BGPVPN:Dummy:networking_bgpvpn ...")
@@ -65,6 +71,14 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
         LOG.info("BGP VPN Service Plugin using Service Driver: %s",
                  default_provider)
         self.driver = drivers[default_provider]
+
+        # Register options for plugin and save bgpvpn section
+        opts.register_bgpvpn_options(CONF)
+        self.bgpvpn_config = CONF.bgpvpn
+        self.bgpvpn_available_targets = self._available_targets()
+
+        # Register RBAC object for BGPVPN RBAC
+        base.NeutronObjectRegistry.register(bgpvpn_rbac_obj.BGPVPNRBAC)
 
         if len(drivers) > 1:
             LOG.warning("Multiple drivers configured for BGPVPN, although"
@@ -161,6 +175,63 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
                               'bgpvpns': bgpvpns})
                     raise n_exc.BadRequest(resource='bgpvpn', msg=msg)
 
+    def _validate_targets(self, context, bgpvpn):
+        rt = utils.rtrd_list2str(bgpvpn['route_targets'])
+        i_rt = utils.rtrd_list2str(bgpvpn['import_targets'])
+        e_rt = utils.rtrd_list2str(bgpvpn['export_targets'])
+        # auto-allocation works only if all target fields are empty
+        if not i_rt and not e_rt and not rt:
+            if self._is_targets_auto_allocation_enabled():
+                alloc_targets = self.driver.bgpvpn_db.get_allocated_targets(
+                    context)
+                for target in self.bgpvpn_available_targets:
+                    if target not in alloc_targets:
+                        if self.bgpvpn_config.import_target_auto_allocation:
+                            bgpvpn['import_targets'] = [target]
+                        if self.bgpvpn_config.export_target_auto_allocation:
+                            bgpvpn['export_targets'] = [target]
+                        if self.bgpvpn_config.route_target_auto_allocation:
+                            bgpvpn['route_targets'] = [target]
+                        return
+            else:
+                msg = ('Targets fields required. One of the fields: '
+                       'export_targets, import_targets, route_target must be '
+                       'passed.')
+                raise n_exc.BadRequest(resource='bgpvpn', msg=msg)
+
+    def _available_targets(self):
+        if not self._is_targets_auto_allocation_enabled():
+            return []
+        if not self.bgpvpn_config.region_asn:
+            msg = ('Region ASn is required for auto-allocation of '
+                   'targets.')
+            raise ValueError(msg)
+
+        asn_parts = self.bgpvpn_config.region_asn.split('.')
+        if len(asn_parts) != 2:
+            msg = ('Region ASn should be in 4-byte dotted notation '
+                   '<ASN>.<Number>')
+            raise ValueError(msg)
+        asn_4_byte = (int(asn_parts[0]) * 65536) + int(asn_parts[1])
+        if asn_4_byte < 4200000000 or asn_4_byte > 4294967294:
+            msg = ('Region ASn in 4-byte notation %s should be in private '
+                   'range 4200000000 < ASn < 4294967294' % asn_4_byte)
+            raise ValueError(msg)
+
+        res = []
+        for rng in self.bgpvpn_config.target_id_range.split(','):
+            if '-' in rng:
+                values = rng.split('-')
+                res.extend(list(range(int(values[0]), int(values[1]) + 1)))
+            else:
+                res.append(int(rng))
+        return ['%s:%s' % (asn_4_byte, r) for r in res]
+
+    def _is_targets_auto_allocation_enabled(self):
+        return (self.bgpvpn_config.export_target_auto_allocation or
+                self.bgpvpn_config.import_target_auto_allocation or
+                self.bgpvpn_config.route_target_auto_allocation)
+
     def get_plugin_type(self):
         return bgpvpn_def.ALIAS
 
@@ -169,6 +240,7 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
 
     def create_bgpvpn(self, context, bgpvpn):
         bgpvpn = bgpvpn['bgpvpn']
+        self._validate_targets(context, bgpvpn)
         return self.driver.create_bgpvpn(context, bgpvpn)
 
     def get_bgpvpns(self, context, filters=None, fields=None):
@@ -191,10 +263,12 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
         net = self._validate_network(context, net_assoc['network_id'])
         # check every resource belong to the same tenant
         bgpvpn = self.get_bgpvpn(context, bgpvpn_id)
-        if net['tenant_id'] != bgpvpn['tenant_id']:
+        if net['tenant_id'] != bgpvpn['tenant_id'] and \
+                not bgpvpn['shared']:
             msg = 'network doesn\'t belong to the bgpvpn owner'
             raise n_exc.NotAuthorized(resource='bgpvpn', msg=msg)
-        if net_assoc['tenant_id'] != bgpvpn['tenant_id']:
+        if net_assoc['tenant_id'] != bgpvpn['tenant_id'] and \
+                not bgpvpn['shared']:
             msg = 'network association and bgpvpn should belong to\
                 the same tenant'
             raise n_exc.NotAuthorized(resource='bgpvpn', msg=msg)
@@ -225,10 +299,12 @@ class BGPVPNPlugin(bgpvpn.BGPVPNPluginBase,
             msg = ("Router associations require the bgpvpn to be of type %s"
                    % constants.BGPVPN_L3)
             raise n_exc.BadRequest(resource='bgpvpn', msg=msg)
-        if not router['tenant_id'] == bgpvpn['tenant_id']:
+        if router['tenant_id'] != bgpvpn['tenant_id'] and \
+                not bgpvpn['shared']:
             msg = "router doesn't belong to the bgpvpn owner"
             raise n_exc.NotAuthorized(resource='bgpvpn', msg=msg)
-        if not (router_assoc['tenant_id'] == bgpvpn['tenant_id']):
+        if router_assoc['tenant_id'] != bgpvpn['tenant_id'] and \
+                not bgpvpn['shared']:
             msg = "router association and bgpvpn should " \
                   "belong to the same tenant"
             raise n_exc.NotAuthorized(resource='bgpvpn', msg=msg)

@@ -15,6 +15,11 @@ from oslo_policy import policy
 
 
 rules = [
+    policy.RuleDefault(
+        name='shared_bgpvpns',
+        check_str='field:bgpvpns:shared=True',
+        description='Definition of a shared bgpvpns'
+    ),
     policy.DocumentedRuleDefault(
         'create_bgpvpn',
         base.RULE_ADMIN_ONLY,
@@ -120,7 +125,10 @@ rules = [
     ),
     policy.DocumentedRuleDefault(
         'get_bgpvpn',
-        base.RULE_ADMIN_OR_OWNER,
+        base.policy_or(
+            base.RULE_ADMIN_OR_OWNER,
+            'rule:shared_bgpvpns',
+        ),
         'Get BGP VPNs',
         [
             {
