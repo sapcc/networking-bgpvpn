@@ -338,7 +338,7 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
             config.route_target_auto_allocation = False
             req_data = {
                 'bgpvpn': {
-                    'tenant_id': self._tenant_id,
+                    'tenant_id': self._project_id,
                     'export_targets': [],
                     'import_targets': [],
                     'route_targets': [],
@@ -364,13 +364,13 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
                 mock.ANY, net['network']['id'])
 
     def test_associate_unauthorized_network_to_shared_bgpvpn(self):
-        with self.network(tenant_id=self._tenant_id) as net, \
+        with self.network(tenant_id=self._project_id) as net, \
                 self.bgpvpn(tenant_id='another_tenant') as bgpvpn, \
                 mock.patch.object(bgpvpn_db.BGPVPNPluginDb, '_is_shared',
                                   return_value=True):
             id = bgpvpn['bgpvpn']['id']
             data = {'network_association': {'network_id': net['network']['id'],
-                                            'tenant_id': self._tenant_id}}
+                                            'tenant_id': self._project_id}}
             bgpvpn_net_req = self.new_create_request(
                 'bgpvpn/bgpvpns',
                 data=data,
@@ -456,14 +456,14 @@ class TestBGPVPNServicePlugin(BgpvpnTestCaseMixin):
                 mock.ANY, router['router']['id'])
 
     def test_associate_unauthorized_router_to_shared_bgpvpn(self):
-        with self.router(tenant_id=self._tenant_id) as router:
+        with self.router(tenant_id=self._project_id) as router:
             router_id = router['router']['id']
             with self.bgpvpn(tenant_id='another_tenant') as bgpvpn, \
                     mock.patch.object(bgpvpn_db.BGPVPNPluginDb, '_is_shared',
                                       return_value=True):
                 id = bgpvpn['bgpvpn']['id']
                 data = {'router_association': {'router_id': router_id,
-                                               'tenant_id': self._tenant_id}}
+                                               'tenant_id': self._project_id}}
                 bgpvpn_router_req = self.new_create_request(
                     'bgpvpn/bgpvpns',
                     data=data,

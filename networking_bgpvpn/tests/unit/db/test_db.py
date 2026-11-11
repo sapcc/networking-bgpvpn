@@ -237,10 +237,10 @@ class BgpvpnDBTestCase(test_plugin.BgpvpnTestCaseMixin):
         with db_api.CONTEXT_WRITER.using(self.ctx):
             self.ctx.session.add(BGPVPNRBAC(
                 object_id=bgpvpn['id'],
-                target_tenant=target_tenant,
+                target_project=target_tenant,
                 action=rbac_db_models.ACCESS_SHARED,
                 object_type=BGPVPNRBAC.object_type,
-                project_id=self._tenant_id,
+                project_id=self._project_id,
             ))
 
         # check
